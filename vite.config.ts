@@ -4,5 +4,8 @@ import react from '@vitejs/plugin-react-swc'
 // https://vite.dev/config/
 export default defineConfig({
   base: "/CCLab_Project_B/",
+  build: {
+    outDir: "dist",
+  },
   plugins: [react()],
 })
