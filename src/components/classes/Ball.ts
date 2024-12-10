@@ -82,7 +82,7 @@ export default class Ball {
             const dy = particle.position.y - this.y;
             const distanceSquared = dx * dx + dy * dy;
             
-            if (distanceSquared > radius * radius * 1.2 || particle.isDead) {
+            if (distanceSquared > radius * radius || particle.isDead) {
                 if (i >= 0 && i < this.particles.length) {
                     ParticlePool.getInstance().release(particle);
                     this.particles.splice(i, 1);
@@ -98,8 +98,7 @@ export default class Ball {
         }
         const particleArea = this.particles.length / Ball.PARTICLES_PER_AREA;
         const radius = Math.sqrt(particleArea / Math.PI);
-        this.size = radius * 2 * 1.1; // 1.1 for a small buffer
-
+        this.size = radius * 2 * this.p5.map(this.p5.random(0,1),0,1,1.09,1.1);
         const currentRadius = this.size / 2;
         for (const particle of this.particles) {
             particle.reposition(this.x, this.y, currentRadius);
@@ -165,7 +164,7 @@ export default class Ball {
 
     transferParticlesTo(targetBall: Ball, count: number) {
         for (let i = 0; i < count; i++) {
-            if (this.particles.length > 0) {
+            if (this.particles.length >= 0) {
                 const particle = this.particles.pop()!;
                 particle.flowTowards(targetBall.x, targetBall.y, 0.5);
                 targetBall.particles.push(particle);
@@ -180,38 +179,84 @@ export default class Ball {
     }
 
     private applyCohesion() {
+        // Replace grid system with a single center point approach
+        const centerX = this.x;
+        const centerY = this.y;
+        
+        // Calculate center of mass for black and white particles separately
+        const centers = {
+            white: { x: 0, y: 0, count: 0 },
+            black: { x: 0, y: 0, count: 0 }
+        };
+
+        // Calculate center of mass for each color
         for (const particle of this.particles) {
-            let avgX = 0;
-            let avgY = 0;
-            let count = 0;
+            centers[particle.color].x += particle.position.x;
+            centers[particle.color].y += particle.position.y;
+            centers[particle.color].count++;
+        }
 
-            this.particles.forEach(otherParticle => {
-                if (otherParticle !== particle && otherParticle.color === particle.color) {
-                    const dx = otherParticle.position.x - particle.position.x;
-                    const dy = otherParticle.position.y - particle.position.y;
-                    const distance = Math.sqrt(dx * dx + dy * dy);
-
-                    if (distance < 30) {
-                        const currentAngle = Math.atan2(dy, dx);
-                        const preferredAngle = particle.getPreferredAngle(particle.lastBallX, particle.lastBallY);
-                        const angleDiff = Math.abs(particle.normalizeAngle(currentAngle - preferredAngle));
-
-                        if (angleDiff < Math.PI / 2) {
-                            avgX += otherParticle.position.x;
-                            avgY += otherParticle.position.y;
-                            count++;
-                        }
-                    }
-                }
-            });
-
-            if (count > 0) {
-                avgX /= count;
-                avgY /= count;
-                const cohesionStrength = 0.08;
-                particle.vx += (avgX - particle.position.x) * cohesionStrength;
-                particle.vy += (avgY - particle.position.y) * cohesionStrength;
+        // Normalize center coordinates
+        for (const color of ['white', 'black'] as const) {
+            if (centers[color].count > 0) {
+                centers[color].x /= centers[color].count;
+                centers[color].y /= centers[color].count;
             }
+        }
+
+        const radius = this.size / 2;
+        for (const particle of this.particles) {
+            // Calculate distance to ball center
+            const dxCenter = particle.position.x - centerX;
+            const dyCenter = particle.position.y - centerY;
+            const distanceToCenter = Math.sqrt(dxCenter * dxCenter + dyCenter * dyCenter);
+
+            // Calculate distance to same color center of mass
+            const colorCenter = centers[particle.color];
+            const dxColor = particle.position.x - colorCenter.x;
+            const dyColor = particle.position.y - colorCenter.y;
+            
+            // Force calculations
+            const boundaryForce = 0.02; // Boundary force
+            const cohesionForce = 0.01; // Cohesion force
+            const rotationForce = 0.03; // Rotation force
+            const repulsionForce = 0.1; // New repulsion force
+
+            // Boundary constraint
+            if (distanceToCenter > radius * 0.8) {
+                particle.vx -= (dxCenter / distanceToCenter) * boundaryForce;
+                particle.vy -= (dyCenter / distanceToCenter) * boundaryForce;
+            }
+
+            // Same color cohesion
+            if (colorCenter.count > 0) {
+                particle.vx -= dxColor * cohesionForce;
+                particle.vy -= dyColor * cohesionForce;
+            }
+
+            // Apply repulsion force if too close to the center
+            if (distanceToCenter < radius * 0.5) {
+                particle.vx += (dxCenter / distanceToCenter) * repulsionForce;
+                particle.vy += (dyCenter / distanceToCenter) * repulsionForce;
+            }
+
+            // Add rotation force, black and white rotate in opposite directions
+            const rotationDirection = particle.color === 'white' ? 1 : -1;
+            particle.vx += -dyCenter * rotationForce * rotationDirection;
+            particle.vy += dxCenter * rotationForce * rotationDirection;
+
+            // Speed limit
+            const maxSpeed = 2;
+            const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy);
+            if (speed > maxSpeed) {
+                particle.vx = (particle.vx / speed) * maxSpeed;
+                particle.vy = (particle.vy / speed) * maxSpeed;
+            }
+
+            // Add small randomness
+            const randomness = 0.02;
+            particle.vx += this.p5.random(-randomness, randomness);
+            particle.vy += this.p5.random(-randomness, randomness);
         }
     }
 
