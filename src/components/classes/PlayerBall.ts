@@ -2,7 +2,7 @@ import p5 from "p5";
 import Ball from "./Ball";
 
 export default class PlayerBall extends Ball {
-    private static readonly MOVEMENT_SPEED = 5;
+    private static readonly MOVEMENT_SPEED = 20;
 
     private keys: {
         up: boolean;
@@ -14,11 +14,7 @@ export default class PlayerBall extends Ball {
     };
 
     private playerType: 'player1' | 'player2';
-
     private onEvent?: (event: { type: 'split' }) => void;
-
-    private handleKeyDown: (e: KeyboardEvent) => void;
-    private handleKeyUp: (e: KeyboardEvent) => void;
 
     constructor(p5: p5, x: number, y: number, color: "white" | "black", playerType: 'player1' | 'player2', size: number, onEvent?: (event: { type: 'split' }) => void) {
         super(p5, x, y, color, size);
@@ -31,23 +27,15 @@ export default class PlayerBall extends Ball {
             q: false,
             '/': false
         };
-        
-        this.handleKeyDown = this.handleKeyPress.bind(this, true);
-        this.handleKeyUp = this.handleKeyPress.bind(this, false);
-        
         this.setupKeyboardControls();
-        
         if (onEvent) {
             this.onEvent = onEvent;
         }
-
-        this.targetX = x;
-        this.targetY = y;
     }
 
     private setupKeyboardControls() {
-        window.addEventListener('keydown', this.handleKeyDown);
-        window.addEventListener('keyup', this.handleKeyUp);
+        window.addEventListener('keydown', this.handleKeyPress.bind(this, true));
+        window.addEventListener('keyup', this.handleKeyPress.bind(this, false));
     }
 
     private handleKeyPress(isDown: boolean, e: KeyboardEvent) {
@@ -89,6 +77,7 @@ export default class PlayerBall extends Ball {
         }
         const splitKey = this.playerType === 'player1' ? 'q' : '/';
         if (e.key.toLowerCase() === splitKey && isDown && !this.keys[splitKey] && this.onEvent) {
+            console.log('Split key pressed:', splitKey);
             this.keys[splitKey] = true;
             this.onEvent({ type: 'split' });
         }
@@ -97,11 +86,11 @@ export default class PlayerBall extends Ball {
         }
     }
 
-    display() {
+    public display() {
         super.display();
     }
 
-    update() {
+    public update() {
         const CANVAS_WIDTH = window.innerWidth;
         const CANVAS_HEIGHT = window.innerHeight - 56; // Subtract header/footer height
         const MARGIN = this.size; // Use ball size as margin
@@ -121,40 +110,50 @@ export default class PlayerBall extends Ball {
 
         super.update(this.targetX, this.targetY);
     }
+    //for determing the winning condition
+    private countParticlesByColor(color: "white" | "black"): number {
+        return this.particles.filter(p => p.color === color).length;
+    }
+    
+    public collide(other: Ball) {
+        const dx = other.x - this.x;
+        const dy = other.y - this.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const minDistance = (this.size + other.size) / 2;
 
-    public collide(other: Ball): { gameOver: boolean; victory: boolean } {
-        this.updateSize(this.particleCount);
-        other.updateSize(other.particleCount);
-        
-        if (this.checkCollision(other).isColliding) {
-            // Calculate collision energy before handling collision
-            const collision = this.checkCollision(other);
-            const nx = collision.dx / collision.distance;
-            const ny = collision.dy / collision.distance;
-            const dvx = other.vx - this.vx;
-            const dvy = other.vy - this.vy;
-            const velocityAlongNormal = dvx * nx + dvy * ny;
-            const relativeSpeed = Math.abs(velocityAlongNormal);
-            const collisionEnergy = relativeSpeed * Ball.PARTICLE_ELASTICITY;
-
-            this.handleCollision(other);
-            
+        if (distance < minDistance) {
+            const overlap = minDistance - distance;
+            // Normalize the collision vector
+            const nx = dx / distance;
+            const ny = dy / distance;
+            // Separate the balls to remove overlap
+            this.x -= nx * overlap / 2;
+            this.y -= ny * overlap / 2;
+            this.targetX = this.x;//update target
+            this.targetY = this.y;
+            other.x += nx * overlap / 2;
+            other.y += ny * overlap / 2;
+            other.targetX = other.x;//update target
+            other.targetY = other.y;
             if (other instanceof PlayerBall && this instanceof PlayerBall) {
                 const MINIMUM_PARTICLES = 10;
-                if (other.particles.length <= MINIMUM_PARTICLES || 
-                    this.particles.length <= MINIMUM_PARTICLES) {
-                    return {
-                        gameOver: true,
-                        victory: false
-                    };
+                if (this.particles.length !== other.particles.length) {
+                    const larger = this.particles.length > other.particles.length ? this : other;
+                    const smaller = this.particles.length > other.particles.length ? other : this;
+                    const transferCount = Math.floor(smaller.particles.length);
+                    smaller.transferParticlesTo(larger, transferCount);
+                    if(smaller.particles.length <= MINIMUM_PARTICLES){
+                        return {
+                            gameOver: true,
+                            victory: false
+                        };
+                    }
                 }
-
                 const thisWhiteRatio = this.countParticlesByColor("white") / this.particles.length;
                 const otherWhiteRatio = other.countParticlesByColor("white") / other.particles.length;
                 
                 const sizeRatio = Math.min(this.particles.length, other.particles.length) / 
-                                 Math.max(this.particles.length, other.particles.length);
-                
+                                 Math.max(this.particles.length, other.particles.length)
                 // Victory condition - balanced particles
                 if (Math.abs(thisWhiteRatio - 0.5) < 0.1 && 
                     Math.abs(otherWhiteRatio - 0.5) < 0.1 && 
@@ -164,44 +163,14 @@ export default class PlayerBall extends Ball {
                         victory: true 
                     };
                 }
-
-                // Dynamic particle transfer based on collision energy
-                const energyFactor = Math.min(collisionEnergy * 2, 1.0); // Scale collision energy
-                const baseTransferRate = 0.05; // Base transfer rate 5%
-                const transferRate = baseTransferRate + (baseTransferRate * energyFactor);
-                
+            }else{
                 if (this.particles.length > other.particles.length) {
-                    const transferCount = Math.floor(other.particles.length * transferRate);
+                    const transferCount = Math.floor(other.particles.length);
                     other.transferParticlesTo(this, transferCount);
-                } else {
-                    const transferCount = Math.floor(this.particles.length * transferRate);
-                    this.transferParticlesTo(other, transferCount);
-                }
-            } else {
-                // Non-player ball collision
-                const MINIMUM_PARTICLES = 10;
-                if (this.particles.length <= MINIMUM_PARTICLES) {
-                    return {
-                        gameOver: true,
-                        victory: false
-                    };
-                }
-
-                // Dynamic absorption based on collision energy
-                const energyFactor = Math.min(collisionEnergy * 2, 1.0);
-                const baseTransferRate = 0.1;
-                const transferRate = baseTransferRate + (baseTransferRate * energyFactor);
-
-                if (this.particles.length > other.particles.length) {
-                    const transferCount = Math.floor(other.particles.length * transferRate);
-                    other.transferParticlesTo(this, transferCount);
-                } else {
-                    const transferCount = Math.floor(this.particles.length * transferRate);
-                    this.transferParticlesTo(other, transferCount);
-                }
+                } 
             }
+
         }
-        
         return {
             gameOver: false,
             victory: false
@@ -209,50 +178,42 @@ export default class PlayerBall extends Ball {
     }
 
     public split(p5: p5): Ball | undefined {
-        if (this.particles.length < 20) return undefined; // 确保有足够的粒子才能分裂
+        console.log('Split called, particles:', this.particles.length);
+        const MIN_PARTICLES = 20;
+        if (this.particles.length < MIN_PARTICLES * 2) {
+            console.log('Not enough particles to split');
+            return undefined;
+        }
 
-        const particlesToSeparate = Math.floor(this.particles.length * 0.2);
-        if (particlesToSeparate <= 0) return undefined;
-
-        // 计算新球的位置，确保在合理范围内
-        const offsetX = Math.sign(this.p5.random(-1, 1)) * Math.max(100, Math.abs(this.p5.random(-150, 150)));
-        const offsetY = Math.sign(this.p5.random(-1, 1)) * Math.max(100, Math.abs(this.p5.random(-150, 150)));
-
+        // Calculate the position of the new ball
+        const offsetDistance = this.size * 2.5;
+        const angle = Math.random() * Math.PI * 2;
+        const offsetX = Math.cos(angle) * offsetDistance;
+        const offsetY = Math.sin(angle) * offsetDistance;
         const newX = Math.max(this.size, Math.min(this.x + offsetX, p5.width - this.size));
         const newY = Math.max(this.size, Math.min(this.y + offsetY, p5.height - this.size));
 
-        // 创建新球时给予合适的初始大小
-        const newBall = new Ball(p5, newX, newY, this.color, this.size * 0.2);
+        // Create new ball with 20% of the original size and correct target position
+        const newSize = this.size * 0.2;
+        console.log('Creating new ball with size:', newSize);
+        const newBall = new Ball(this.p5, newX, newY, this.color, newSize);
+        newBall.targetX = newX;
+        newBall.targetY = newY;
 
-        // 转移粒子并更新计数
-        const particlesToTransfer = this.particles.splice(-particlesToSeparate, particlesToSeparate);
-        newBall.particles = particlesToTransfer;
-        this.particleCount -= particlesToSeparate;
-        newBall.particleCount = particlesToSeparate;
+        // Calculate particles to transfer based on size ratio
+        const sizeRatio = Math.pow(newSize / this.size, 2); // Square ratio because it's area-based
+        const particlesToSeparate = Math.floor(this.particles.length * sizeRatio);
+        console.log('Particles to separate:', particlesToSeparate);
 
-        // 更新两个球的大小
-        this.updateSize(this.particleCount);
-        newBall.updateSize(newBall.particleCount);
+        if (particlesToSeparate < MIN_PARTICLES) {
+            console.log('Too few particles to separate');
+            return undefined;
+        }
 
-        // 增加分裂速度和添加随机性
-        const splitSpeed = 8;
-        const angle = Math.atan2(offsetY, offsetX);
-        const randomAngleOffset = this.p5.random(-0.2, 0.2); // 添加一些随机角度偏移
-
-        // 设置新球的速度
-        newBall.vx = Math.cos(angle + randomAngleOffset) * splitSpeed;
-        newBall.vy = Math.sin(angle + randomAngleOffset) * splitSpeed;
-
-        // 设置原球的反向速度（较小）
-        this.vx = -Math.cos(angle) * splitSpeed * 0.3;
-        this.vy = -Math.sin(angle) * splitSpeed * 0.3;
-
-        // 确保新球的粒子立即开始移动
-        newBall.particles.forEach(particle => {
-            particle.vx = newBall.vx * 0.5 + this.p5.random(-1, 1);
-            particle.vy = newBall.vy * 0.5 + this.p5.random(-1, 1);
-        });
-
+        // Transfer particles
+        this.transferParticlesTo(newBall, particlesToSeparate);
+        console.log('Split complete, new ball created with', particlesToSeparate, 'particles');
+        
         return newBall;
     }
 }

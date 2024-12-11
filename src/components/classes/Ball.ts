@@ -1,323 +1,223 @@
 import p5 from "p5";
 import Particle from "./Particle";
-import { ParticlePool } from "./ParticlePool";
 
 export default class Ball {
     protected p5: p5;
     x: number;
     y: number;
-    vx: number = 0;
-    vy: number = 0;
     size: number;
     color: "white" | "black";
     particles: Particle[] = [];
-    particleCount: number;
     targetX: number;
     targetY: number;
 
-    // Particle system parameters
-    private static readonly BASE_PARTICLE_DENSITY = 0.05; 
-    private static readonly OPTIMAL_PARTICLE_COUNT = 500;  
-    protected static readonly PARTICLE_ELASTICITY = 0.8;    
 
-    // Energy system parameters
-    private energy: number;                    
-    private readonly baseSize: number;         
-    private readonly maxParticleCapacity: number; 
+    protected static readonly BASE_PARTICLE_DENSITY = 0.05;
+    static MAX_PARTICLE_COUNT = 1000;
 
     constructor(p5: p5, x: number, y: number, color: "white" | "black", size: number) {
         this.p5 = p5;
         this.x = x;
         this.y = y;
-        this.baseSize = size;
         this.size = size;
         this.color = color;
         this.targetX = x;
         this.targetY = y;
-        this.particles = [];
-        this.particleCount = 0;
-        this.energy = 1.0; 
-        this.maxParticleCapacity = Math.floor(Math.PI * Math.pow(size / 2, 2) * Ball.BASE_PARTICLE_DENSITY);
+
+        // 计算粒子数量
+        const particleCount = Math.floor(Math.PI * Math.pow(size / 2, 2) * Ball.BASE_PARTICLE_DENSITY);
+        
+        // 在球体范围内随机分布粒子
+        this.particles = Array.from({ length: particleCount }, () => {
+            const radius = this.size / 2;
+            const angle = p5.random(0, Math.PI * 2);
+            const r = p5.random(0, radius);
+            const particleX = this.x + r * Math.cos(angle);
+            const particleY = this.y + r * Math.sin(angle);
+            // 创建粒子时使用当前位置作为目标位置
+            const particle = new Particle(this.p5, particleX, particleY, this.color, this.x, this.y);
+            return particle;
+        });
     }
 
-    private addParticle(color?: "white" | "black"): boolean {
-        if (this.particles.length >= this.maxParticleCapacity) {
-            return false;
-        }
-
+    public update(targetX: number, targetY: number) {
+        this.targetX = targetX;
+        this.targetY = targetY;
+        this.x = this.p5.lerp(this.x, this.targetX, 0.35);
+        this.y = this.p5.lerp(this.y, this.targetY, 0.35);
         const radius = this.size / 2;
-        const angle = this.p5.random(0, this.p5.TWO_PI);
-        const r = this.p5.random(0, radius);
-        const x = this.x + r * Math.cos(angle);
-        const y = this.y + r * Math.sin(angle);
-
-        const particle = ParticlePool.getInstance().acquire(
-            this.p5,
-            x,
-            y,
-            color || this.color,
-        );
-
-        this.particles.push(particle);
-        this.particleCount++;
-        return true;
+        
+        this.YinYangBallEffect()
+        for (const particle of this.particles) {
+            particle.update(this.x, this.y, radius);
+        }
     }
 
-    display() {
-        this.p5.noStroke();
+    public display() {
+        // Add debug visualization
+        this.p5.push();
+        this.p5.stroke(this.color === 'white' ? 255 : 0);
         this.p5.noFill();
         this.p5.circle(this.x, this.y, this.size);
+        this.p5.pop();
 
-  
-        const targetParticleCount = Math.floor(this.maxParticleCapacity * this.energy);
-        const currentParticleCount = this.particles.length;
-        
-        
-        if (currentParticleCount < targetParticleCount) {
-            const particlesToAdd = Math.min(
-                targetParticleCount - currentParticleCount,
-                Math.ceil(Ball.OPTIMAL_PARTICLE_COUNT * 0.1) 
-            );
-            
-            for (let i = 0; i < particlesToAdd; i++) {
-                this.addParticle();
-            }
-        }
+        // Original particle rendering
         for (const particle of this.particles) {
             particle.display();
         }
     }
 
-    update(targetX: number, targetY: number) {
-        this.targetX = targetX;
-        this.targetY = targetY;
-        this.x = this.p5.lerp(this.x, this.targetX, 0.1);
-        this.y = this.p5.lerp(this.y, this.targetY, 0.1);
-        const radius = this.size / 2;
-        for (const particle of this.particles) {
-            particle.update(this.x, this.y, radius);
+    public transferParticlesTo(targetBall: Ball, ParticleTransferCount: number) { 
+        const particlesToTransfer = [];
+        for (let i = 0; i < ParticleTransferCount && this.particles.length > 0; i++) {
+            const particle = this.particles.pop()!;
+            
+            // // 计算从源球到目标球的方向
+            const dx = targetBall.x - this.x;
+            const dy = targetBall.y - this.y;
+            // const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // 在目标球内设置随机位置
+            const targetRadius = targetBall.size / 2;
+            const spreadAngle = Math.PI / 4; // 使用更大的扇形范围
+            const baseAngle = Math.atan2(dy, dx);
+            const randomAngle = baseAngle + (Math.random() - 0.5) * spreadAngle;
+            
+            // 在目标球内部随机分布（从中心到边缘）
+            const distributionRadius = targetRadius * Math.sqrt(Math.random()); // 使用平方根使分布更均匀
+            particle.position.x = targetBall.x + distributionRadius * Math.cos(randomAngle);
+            particle.position.y = targetBall.y + distributionRadius * Math.sin(randomAngle);
+            
+            // 给予较小的随机初始速度
+            const initialSpeed = 0.5;
+            particle.vx = (Math.random() - 0.5) * initialSpeed;
+            particle.vy = (Math.random() - 0.5) * initialSpeed;
+            
+            // 重置偏移量和目标位置
+            particle.resetOffset(targetBall.x, targetBall.y);
+            
+            particlesToTransfer.push(particle);
         }
-        this.applyCohesion();
-        this.cleanupParticles();
+        
+        // 更新两个球的大小
+        targetBall.particles.push(...particlesToTransfer);
+        this.updateSize();
+        targetBall.updateSize();
     }
 
-    private cleanupParticles() {
-        const radius = this.size / 2;
-        for (let i = this.particles.length - 1; i >= 0; i--) {
-            const particle = this.particles[i];
+    updateSize() :boolean{
+        if (this.particles.length === 0) {
+            return false;
+        }  
+        const targetSize = Math.max(30, Math.min(100, 30 + Math.sqrt(this.particles.length) * 2));
+        this.size = this.p5.lerp(this.size, targetSize, 0.1);
+        const currentRadius = this.size / 2;
+        let needsReposition = false;
+
+        this.particles.forEach(particle => {
             const dx = particle.position.x - this.x;
             const dy = particle.position.y - this.y;
-            const distanceSquared = dx * dx + dy * dy;
-            
-            if (distanceSquared > radius * radius || particle.isDead) {
-                if (i >= 0 && i < this.particles.length) {
-                    ParticlePool.getInstance().release(particle);
-                    this.particles.splice(i, 1);
-                    this.particleCount--;
-                }
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            if (distance > currentRadius) {
+                needsReposition = true;
+                particle.reposition(this.x, this.y, currentRadius);
             }
-        }
+        });
+        return needsReposition;
     }
-
-    updateSize(currentParticleCount: number) {
-        if (currentParticleCount === 0) {
-            this.energy = 0;
-            this.size = this.baseSize * Math.sqrt(this.energy);
-            return false;
-        }
-
-        // Based on the current particle count and maximum capacity, calculate the energy
-        this.energy = Math.min(currentParticleCount / this.maxParticleCapacity, 1.0);
-        
-        // The size of the ball will change slightly based on the energy, but it will always be based on the base size
-        this.size = this.baseSize * (0.8 + 0.4 * this.energy);
-        
-        // Update particle positions
-        const currentRadius = this.size / 2;
-        for (const particle of this.particles) {
-            particle.reposition(this.x, this.y, currentRadius);
-        }
-        return true;
-    }
-
-    checkCollision(other: Ball): { isColliding: boolean, dx: number, dy: number, distance: number, minDistance: number } {
-        const dx = other.x - this.x;
-        const dy = other.y - this.y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        const minDistance = (this.size + other.size) / 2;
-        return {
-            isColliding: distance < minDistance,
-            dx,
-            dy,
-            distance,
-            minDistance
-        };
-    }
-
-    handleCollision(other: Ball) {
-        const collision = this.checkCollision(other);
-
-        if (collision.isColliding) {
-            // Calculate overlap
-            const overlap = collision.minDistance - collision.distance;
-
-            // Normalize the collision vector
-            const nx = collision.dx / collision.distance;
-            const ny = collision.dy / collision.distance;
-
-            // Separate the balls to remove overlap
-            this.x -= nx * overlap / 2;
-            this.y -= ny * overlap / 2;
-            other.x += nx * overlap / 2;
-            other.y += ny * overlap / 2;
-
-            // Calculate relative velocity
-            const dvx = other.vx - this.vx;
-            const dvy = other.vy - this.vy;
-
-            // Calculate velocity along the normal
-            const velocityAlongNormal = dvx * nx + dvy * ny;
-
-            // Do not resolve if velocities are separating
-            if (velocityAlongNormal > 0) return;
-
-            // Calculate collision energy
-            const relativeSpeed = Math.abs(velocityAlongNormal);
-            const collisionEnergy = relativeSpeed * Ball.PARTICLE_ELASTICITY;
-
-            // Energy is converted to particle transfer
-            const particlesToTransfer = Math.floor(
-                (this.particles.length + other.particles.length) * 
-                (collisionEnergy * 0.1) // Collision energy affects the number of particles transferred
-            );
-
-            // Determine particle transfer based on collision direction
-            if (this.particles.length > other.particles.length) {
-                this.transferParticlesTo(other, particlesToTransfer);
-            } else {
-                other.transferParticlesTo(this, particlesToTransfer);
-            }
-
-            // Update velocity
-            const restitution = Ball.PARTICLE_ELASTICITY;
-            const impulse = -(1 + restitution) * velocityAlongNormal;
-            const impulseX = impulse * nx;
-            const impulseY = impulse * ny;
-
-            // Apply impulse to the balls
-            this.vx -= impulseX / 2;
-            this.vy -= impulseY / 2;
-            other.vx += impulseX / 2;
-            other.vy += impulseY / 2;
-        }
-    }
-
-    transferParticlesTo(targetBall: Ball, count: number) {
-        const actualCount = Math.min(count, this.particles.length);
-        
-        for (let i = 0; i < actualCount; i++) {
-            if (this.particles.length > 0) {
-                const particle = this.particles.pop()!;
-                particle.flowTowards(targetBall.x, targetBall.y, 0.5);
-                targetBall.particles.push(particle);
-                this.particleCount--;
-                targetBall.particleCount++;
-            }
-        }
-        this.updateSize(this.particleCount);
-        targetBall.updateSize(targetBall.particleCount);
-    }
-
-    public countParticlesByColor(color: "white" | "black"): number {
-        return this.particles.filter(p => p.color === color).length;
-    }
-
-    private applyCohesion() {
+    private YinYangBallEffect() {
         const centerX = this.x;
         const centerY = this.y;
-        
-        // Calculate center of mass for black and white particles separately
+        const radius = this.size / 2;
+    
+        // Calculate the center points of white and black particles
         const centers = {
             white: { x: 0, y: 0, count: 0 },
             black: { x: 0, y: 0, count: 0 }
         };
-
-        // Calculate center of mass for each color
+    
+        // Calculate the center points of each color
         for (const particle of this.particles) {
             centers[particle.color].x += particle.position.x;
             centers[particle.color].y += particle.position.y;
             centers[particle.color].count++;
         }
-
-        // Normalize center coordinates
+    
+        // Calculate the average center points
         for (const color of ['white', 'black'] as const) {
             if (centers[color].count > 0) {
                 centers[color].x /= centers[color].count;
                 centers[color].y /= centers[color].count;
             }
         }
-
-        const radius = this.size / 2;
+    
+        // Apply forces to each particle
         for (const particle of this.particles) {
-            // Calculate distance to ball center
-            const dxCenter = particle.position.x - centerX;
-            const dyCenter = particle.position.y - centerY;
-            const distanceToCenter = Math.sqrt(dxCenter * dxCenter + dyCenter * dyCenter);
-
-            // Calculate distance to same color center of mass
-            const colorCenter = centers[particle.color];
-            const dxColor = particle.position.x - colorCenter.x;
-            const dyColor = particle.position.y - colorCenter.y;
+            const dx = particle.position.x - centerX;
+            const dy = particle.position.y - centerY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
             
-            // Force calculations
-            const boundaryForce = 0.02; // Boundary force
-            const cohesionForce = 0.01; // Cohesion force
-            const rotationForce = 0.03; // Rotation force
-            // const repulsionForce = 0.1; // New repulsion force
-
-            // Boundary constraint
-            if (distanceToCenter > radius * 0.8) {
-                particle.vx -= (dxCenter / distanceToCenter) * boundaryForce;
-                particle.vy -= (dyCenter / distanceToCenter) * boundaryForce;
-            }
-
-            // Same color cohesion
-            if (colorCenter.count > 0) {
-                particle.vx -= dxColor * cohesionForce;
-                particle.vy -= dyColor * cohesionForce;
-            }
-
-            // // Apply repulsion force if too close to the center
-            // if (distanceToCenter < radius * 0.5) {
-            //     particle.vx += (dxCenter / distanceToCenter) * repulsionForce;
-            //     particle.vy += (dyCenter / distanceToCenter) * repulsionForce;
-            // }
-
-            // Add rotation force, black and white rotate in opposite directions
+            // 1. 弱旋转效果 - 基础太极运动
             const rotationDirection = particle.color === 'white' ? 1 : -1;
-            particle.vx += -dyCenter * rotationForce * rotationDirection;
-            particle.vy += dxCenter * rotationForce * rotationDirection;
-
-            // Speed limit
-            // const maxSpeed = 2;
-            // const speed = Math.sqrt(particle.vx * particle.vx + particle.vy * particle.vy);
-            // if (speed > maxSpeed) {
-            //     particle.vx = (particle.vx / speed) * maxSpeed;
-            //     particle.vy = (particle.vy / speed) * maxSpeed;
-            // }
-
-            // Add small randomness
-            // const randomness = 0.02;
-            // particle.vx += this.p5.random(-randomness, randomness);
-            // particle.vy += this.p5.random(-randomness, randomness);
+            const baseRotationStrength = 0.08; // 降低基础旋转力
+            const distanceRatio = distance / radius;
+            // 使用线性衰减，让旋转力随距离均匀变化
+            const rotationStrength = baseRotationStrength * (1 - distanceRatio * 0.3);
+            
+            particle.vx += -dy * rotationStrength * rotationDirection;
+            particle.vy += dx * rotationStrength * rotationDirection;
+            
+            // // 2. 轨道稳定力 - 使粒子保持在理想轨道上
+            // const idealRadius = radius * 0.7;
+            // const radiusForce = (distance - idealRadius) * 0.02;
+            // particle.vx -= (dx / distance) * radiusForce;
+            // particle.vy -= (dy / distance) * radiusForce;
+    
+            // 3. 同色粒子聚集 - 形成太极两极
+            const colorCenter = centers[particle.color];
+            if (colorCenter.count > 0) {
+                const dxColor = particle.position.x - colorCenter.x;
+                const dyColor = particle.position.y - colorCenter.y;
+                const colorDistance = Math.sqrt(dxColor * dxColor + dyColor * dyColor);
+                const attractionStrength = 0.15; // 增强聚集力
+                if (colorDistance > 0) {
+                    particle.vx -= (dxColor / colorDistance) * attractionStrength;
+                    particle.vy -= (dyColor / colorDistance) * attractionStrength;
+                }
+            }
+    
+            // 4. 异色粒子排斥 - 加强阴阳分离
+            const oppositeColor = particle.color === 'white' ? 'black' : 'white';
+            const oppositeCenter = centers[oppositeColor];
+            if (oppositeCenter.count > 0) {
+                const dxOpposite = particle.position.x - oppositeCenter.x;
+                const dyOpposite = particle.position.y - oppositeCenter.y;
+                const oppositeDistance = Math.sqrt(dxOpposite * dxOpposite + dyOpposite * dyOpposite);
+                const repulsionStrength = 0.12; // 增强排斥力
+                if (oppositeDistance > 0) {
+                    particle.vx += (dxOpposite / oppositeDistance) * repulsionStrength;
+                    particle.vy += (dyOpposite / oppositeDistance) * repulsionStrength;
+                }
+            }
+    
+            // 5. 边界约束
+            if (distance > radius * 0.9) {
+                const boundaryForce = 0.15 * (distance / radius);
+                particle.vx -= (dx / distance) * boundaryForce;
+                particle.vy -= (dy / distance) * boundaryForce;
+            }
         }
     }
-
+    public resetParticleOffsets() {
+        for (const particle of this.particles) {
+            particle.resetOffset(this.x, this.y);
+        }
+    }
     victoryAnimationReleaseParticles() {
-        // Release all particles back to the pool
-        this.particles.forEach(particle => {
-            ParticlePool.getInstance().release(particle);
-        });
-        this.particles = [];
+        // // Release all particles back to the pool
+        // this.particles.forEach(particle => {
+        //     ParticlePool.getInstance().release(particle);
+        // });
+        // this.particles = [];
     }
 }

@@ -5,15 +5,11 @@ import FlickeringGrid from "../utils/FlickeringGrid";
 import p5 from 'p5';
 import { useState, useEffect, useRef, useCallback } from "react";
 import useLocalStorage from "../hooks/useLocalStorage";
-import { ParticlePool } from "./classes/ParticlePool";
-import Particle from "./classes/Particle";
 import { GameResult } from "@/lib/GameResult";
-
 interface MainCanvasProps {
     className?: string;
     onGameOver?: () => void;
 }
-
 interface GameState {
     player1: PlayerBall | null;
     player2: PlayerBall | null;
@@ -45,28 +41,30 @@ export default function MainCanvas({ className, onGameOver }: MainCanvasProps) {
         gameStateRef.current = gameState;
     }, [gameState]);
 
+    const lastSplitTime = useRef(0);
+
     const handleSplit = useCallback(
         (p5: p5, player: PlayerBall) => {
             const now = Date.now();
-            if (splitTimeRef.current && now - splitTimeRef.current < 100) {
-                return;
+            const cooldown = 500; // 500ms cooldown
+            
+            if (now - lastSplitTime.current < cooldown) {
+                return; // 如果冷却时间未到，直接返回
             }
-            splitTimeRef.current = now;
-
+            
+            console.log('handleSplit called');
             const newBall = player.split(p5);
             if (newBall) {
+                console.log('Adding new ball to state');
                 setGameState((prev) => ({
                     ...prev,
                     balls: [...prev.balls, newBall],
                 }));
+                lastSplitTime.current = now; // 更新最后分裂时间
             }
         },
         [setGameState]
     );
-
-    const splitTimeRef = useRef<number>(0);
-
-    const [victoryParticles, setVictoryParticles] = useState<Particle[]>([]);
 
     const [isGameActive, setIsGameActive] = useState(true);
 
@@ -94,6 +92,9 @@ export default function MainCanvas({ className, onGameOver }: MainCanvasProps) {
                 () => handleSplit(p5, gameStateRef.current.player2!)
             );
 
+            console.log('Initializing player1:', player1);
+            console.log('Initializing player2:', player2);
+
             setGameState({
                 player1,
                 player2,
@@ -104,14 +105,19 @@ export default function MainCanvas({ className, onGameOver }: MainCanvasProps) {
 
         p5.setup = () => {
             const parentElement = document.querySelector('.main-canvas-container');
-            if (!parentElement) return;
+            if (!parentElement) {
+                console.error('Cannot find .main-canvas-container element');
+                return;
+            }
             
             p5.createCanvas(
                 parentElement.clientWidth,
                 p5.windowHeight - 56
             );
             
+            console.log('Initializing game...');
             initializeGame();
+            console.log('Game initialized');
         };
 
         p5.draw = () => {
@@ -119,6 +125,7 @@ export default function MainCanvas({ className, onGameOver }: MainCanvasProps) {
 
             const state = gameStateRef.current;
             if (!state.flickeringGrid || !state.player1 || !state.player2) {
+                console.error('Game state is incomplete:', state);
                 return;
             }
 
@@ -126,49 +133,44 @@ export default function MainCanvas({ className, onGameOver }: MainCanvasProps) {
             
             state.flickeringGrid.display();
             
+            console.log('Player positions:', {
+                player1: { x: state.player1.x, y: state.player1.y },
+                player2: { x: state.player2.x, y: state.player2.y }
+            });
+            
             state.player1.update();
             state.player1.display();
+            console.log('Player1 rendered');
             state.player2.update();
             state.player2.display();
-            state.balls.forEach(ball => {
+            console.log('Player2 rendered');
+
+            console.log('Number of balls:', state.balls.length);
+            state.balls.forEach((ball, index) => {
+                console.log(`Ball ${index}:`, { x: ball.x, y: ball.y, size: ball.size });
                 ball.update(ball.targetX, ball.targetY);
                 ball.display();
             });
 
             let collisionResult = { gameOver: false, victory: false };
-            
-            const ballsToRemove: Ball[] = [];
 
             // Handle collisions with non-player balls
             for (const ball of state.balls) {
-                const result1 = state.player1?.collide(ball);
-                const result2 = state.player2?.collide(ball);
-                
-                // Remove balls that are too small or have been mostly absorbed
-                if (!(ball instanceof PlayerBall)) {
-                    const minParticleCount = Math.max(
-                        state.player1?.particles.length || 0,
-                        state.player2?.particles.length || 0
-                    ) * 0.1; // Increased threshold to 10% to match new energy system
-                    
-                    if (ball.particles.length <= 0 || ball.particles.length < minParticleCount) {
-                        ballsToRemove.push(ball);
-                    }
-                }
-                
-                if (result1?.gameOver) {
+                const result1 = state.player1.collide(ball);
+                const result2 = state.player2.collide(ball);
+
+                if (result1.gameOver) {
                     collisionResult = result1;
                     break;
                 }
-                if (result2?.gameOver) {
+                if (result2.gameOver) {
                     collisionResult = result2;
                     break;
                 }
-            }
-
-            // Remove absorbed balls
-            if (ballsToRemove.length > 0) {
-                state.balls = state.balls.filter(ball => !ballsToRemove.includes(ball));
+                if(ball.particles.length === 0) {
+                    state.balls.splice(state.balls.indexOf(ball), 1);
+                }
+                //check victory condition
             }
 
             // Handle player-to-player collision
@@ -180,70 +182,22 @@ export default function MainCanvas({ className, onGameOver }: MainCanvasProps) {
             }
 
             // Handle game over and victory conditions
-            if (collisionResult.gameOver) {
-                if (collisionResult.victory) {
-                    state.player1?.victoryAnimationReleaseParticles();
-                    state.player2?.victoryAnimationReleaseParticles();
-                    state.balls.forEach(ball => ball.victoryAnimationReleaseParticles());
-                    const centerX = p5.width / 2;
-                    const centerY = p5.height / 2;
-                    const radius = Math.min(p5.width, p5.height) / 4;
-
-                    if (victoryParticles.length === 0) {
-                        const pool = ParticlePool.getInstance();
-                        const newParticles = [];
-
-                        // Create victory particle pattern
-                        for (let i = 0; i < 360; i += 5) {
-                            const angle = p5.radians(i);
-                            const x = centerX + radius * Math.cos(angle);
-                            const y = centerY + radius * Math.sin(angle);
-                            const color = i < 180 ? "white" : "black";
-
-                            const particle = pool.acquire(p5, x, y, color);
-                            // Add more dynamic initial velocities
-                            const speed = p5.random(1, 3);
-                            particle.vx = Math.cos(angle) * speed;
-                            particle.vy = Math.sin(angle) * speed;
-                            newParticles.push(particle);
-                        }
-                        setVictoryParticles(newParticles);
-                        setIsGameActive(false);
-                        onGameOverRef.current?.();
-                        setGameResultsRef.current(prev => [...prev, {
-                            victory: true,
-                            timestamp: new Date().toISOString()
-                        }]);
-                    }
-
-                    // Update victory particles with improved motion
-                    victoryParticles.forEach(particle => {
-                        const dx = particle.position.x - centerX;
-                        const dy = particle.position.y - centerY;
-                        const distance = Math.sqrt(dx * dx + dy * dy);
-                        const speed = 2;
-                        
-                        if (distance > 0) {
-                            particle.vx += (-dy / distance) * speed;
-                            particle.vy += (dx / distance) * speed;
-                            
-                            // Add slight inward/outward pulsing
-                            const pulseRate = 0.1;
-                            const targetRadius = radius + Math.sin(p5.frameCount * 0.05) * 20;
-                            particle.vx += (dx / distance) * (distance - targetRadius) * pulseRate;
-                            particle.vy += (dy / distance) * (distance - targetRadius) * pulseRate;
-                        }
-                        
-                        particle.update(centerX, centerY, radius);
-                        particle.display();
-                    });
+            if (collisionResult.gameOver){
+                if(collisionResult.victory) {
+                    setIsGameActive(false);
+                    onGameOverRef.current?.();
+                    setGameResultsRef.current(prev => [...prev, {
+                        victory: true,
+                        timestamp: new Date().toISOString()
+                    }]);
                 } else {
+                    onGameOverRef.current?.();
                     setGameResultsRef.current(prev => [...prev, {
                         victory: false,
                         timestamp: new Date().toISOString()
                     }]);
                     initializeGame();
-                }
+                } 
             }
         };
 
@@ -256,15 +210,7 @@ export default function MainCanvas({ className, onGameOver }: MainCanvasProps) {
                 p5.windowHeight - 56
             );
         };
-    }, [handleSplit, victoryParticles, isGameActive]);
-
-    useEffect(() => {
-        return () => {
-            victoryParticles.forEach(particle => {
-                ParticlePool.getInstance().release(particle);
-            });
-        };
-    }, [victoryParticles]);
+    }, [handleSplit, isGameActive]);
 
     return (
         <div className={className}>
