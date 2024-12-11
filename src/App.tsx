@@ -16,7 +16,7 @@ function App() {
   }, [isGameOver]);
 
   return (
-    <div className="relative">
+    <div className="relative min-h-screen">
       <Header className="fixed top-0 left-0 w-full z-10"/>
       <div className="w-full h-[calc(100vh-64px)] mt-14">
         <MainCanvas 
@@ -25,7 +25,7 @@ function App() {
         />
       </div>
       <About 
-        className={`absolute top-0 left-0 z-20 transition-transform duration-1000 ${
+        className={`fixeed top-0 left-0 z-20 transition-transform duration-1000 ${
           isAboutVisible ? 'translate-y-0' : 'translate-y-full'
         }`}
         onTypingComplete={() => {

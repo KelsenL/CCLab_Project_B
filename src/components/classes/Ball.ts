@@ -56,7 +56,7 @@ export default class Ball {
     public display() {
         // Add debug visualization
         this.p5.push();
-        this.p5.stroke(this.color === 'white' ? 255 : 0);
+        this.p5.noStroke();
         this.p5.noFill();
         this.p5.circle(this.x, this.y, this.size);
         this.p5.pop();

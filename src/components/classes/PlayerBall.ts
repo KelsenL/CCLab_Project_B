@@ -88,6 +88,15 @@ export default class PlayerBall extends Ball {
 
     public display() {
         super.display();
+        this.p5.push();
+        const baseColor = this.color === 'white' ? 255 : 0;
+        // Create oscillating opacity effect
+        const opacity = this.p5.map(this.p5.sin(this.p5.frameCount * 0.1), -1, 1, 50, 200);
+        this.p5.stroke(baseColor, opacity);
+        this.p5.strokeWeight(3);
+        this.p5.noFill();
+        this.p5.circle(this.x, this.y, this.p5.map(this.p5.noise(this.p5.frameCount * 0.1), 0, 1, this.size, this.size * 1.5));
+        this.p5.pop();
     }
 
     public update() {
@@ -151,12 +160,12 @@ export default class PlayerBall extends Ball {
                 }
                 const thisWhiteRatio = this.countParticlesByColor("white") / this.particles.length;
                 const otherWhiteRatio = other.countParticlesByColor("white") / other.particles.length;
+                const colorRatio = Math.abs(thisWhiteRatio - otherWhiteRatio);
                 
                 const sizeRatio = Math.min(this.particles.length, other.particles.length) / 
                                  Math.max(this.particles.length, other.particles.length)
                 // Victory condition - balanced particles
-                if (Math.abs(thisWhiteRatio - 0.5) < 0.1 && 
-                    Math.abs(otherWhiteRatio - 0.5) < 0.1 && 
+                if (colorRatio < 0.1 && 
                     sizeRatio > 0.8) { 
                     return {
                         gameOver: true,
