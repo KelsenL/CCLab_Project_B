@@ -176,7 +176,7 @@ export default function MainCanvas({ className, onGameOver }: MainCanvasProps) {
             // Handle player-to-player collision
             if (!collisionResult.gameOver && state.player1 && state.player2) {
                 const playerCollision = state.player1.collide(state.player2);
-                if (playerCollision?.gameOver) {
+                if (playerCollision.gameOver) {
                     collisionResult = playerCollision;
                 }
             }

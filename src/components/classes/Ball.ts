@@ -14,6 +14,8 @@ export default class Ball {
 
     protected static readonly BASE_PARTICLE_DENSITY = 0.05;
     static MAX_PARTICLE_COUNT = 1000;
+    private isVictoryAnimating: boolean = false;
+    private victoryAnimationPhase: 'gathering' | 'releasing' = 'gathering';
 
     constructor(p5: p5, x: number, y: number, color: "white" | "black", size: number) {
         this.p5 = p5;
@@ -51,6 +53,19 @@ export default class Ball {
         for (const particle of this.particles) {
             particle.update(this.x, this.y, radius);
         }
+        if (this.isVictoryAnimating) {
+            if (this.victoryAnimationPhase === 'gathering') {
+                // 加强聚集力，形成完美太极
+                this.particles.forEach(particle => {
+                    const dx = particle.position.x - this.x;
+                    const dy = particle.position.y - this.y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+                    if (distance > this.size * 0.4) {  // 如果粒子距离太远
+                        particle.reposition(this.x, this.y, this.size * 0.4);
+                    }
+                });
+            }
+        }
     }
 
     public display() {
@@ -66,7 +81,16 @@ export default class Ball {
             particle.display();
         }
     }
-
+    public transferParticleTo(targetBall: Ball) {
+        if (this.particles.length > 0) {
+            const particle = this.particles.pop()!;
+            particle.resetOffset(targetBall.x, targetBall.y);
+            particle.flowTowards(targetBall.x, targetBall.y);
+            targetBall.particles.push(particle);
+            this.updateSize();
+            targetBall.updateSize()
+        }
+    }
     public transferParticlesTo(targetBall: Ball, ParticleTransferCount: number) { 
         const particlesToTransfer = [];
         for (let i = 0; i < ParticleTransferCount && this.particles.length > 0; i++) {
@@ -157,52 +181,44 @@ export default class Ball {
             const dy = particle.position.y - centerY;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            // 1. 弱旋转效果 - 基础太极运动
+            // 1. 基础太极旋转 - 始终保持
             const rotationDirection = particle.color === 'white' ? 1 : -1;
-            const baseRotationStrength = 0.08; // 降低基础旋转力
-            const distanceRatio = distance / radius;
-            // 使用线性衰减，让旋转力随距离均匀变化
-            const rotationStrength = baseRotationStrength * (1 - distanceRatio * 0.3);
+            const baseRotationStrength = 0.08;
+            const rotationStrength = baseRotationStrength * (1 - distance / radius * 0.3);
             
             particle.vx += -dy * rotationStrength * rotationDirection;
             particle.vy += dx * rotationStrength * rotationDirection;
-            
-            // // 2. 轨道稳定力 - 使粒子保持在理想轨道上
-            // const idealRadius = radius * 0.7;
-            // const radiusForce = (distance - idealRadius) * 0.02;
-            // particle.vx -= (dx / distance) * radiusForce;
-            // particle.vy -= (dy / distance) * radiusForce;
     
-            // 3. 同色粒子聚集 - 形成太极两极
-            const colorCenter = centers[particle.color];
-            if (colorCenter.count > 0) {
-                const dxColor = particle.position.x - colorCenter.x;
-                const dyColor = particle.position.y - colorCenter.y;
-                const colorDistance = Math.sqrt(dxColor * dxColor + dyColor * dyColor);
-                const attractionStrength = 0.15; // 增强聚集力
-                if (colorDistance > 0) {
-                    particle.vx -= (dxColor / colorDistance) * attractionStrength;
-                    particle.vy -= (dyColor / colorDistance) * attractionStrength;
+            // 2. 同色聚集 - 仅在非flowing状态下
+            if (!particle.isFlowing) {
+                const colorCenter = centers[particle.color];
+                if (colorCenter.count > 0) {
+                    const dxColor = particle.position.x - colorCenter.x;
+                    const dyColor = particle.position.y - colorCenter.y;
+                    const colorDistance = Math.sqrt(dxColor * dxColor + dyColor * dyColor);
+                    
+                    if (colorDistance > 0) {
+                        // 聚集力
+                        const attractionStrength = 0.2;
+                        particle.vx -= (dxColor / colorDistance) * attractionStrength;
+                        particle.vy -= (dyColor / colorDistance) * attractionStrength;
+                        
+                        // 添加分散力，防止过度聚集
+                        const minDistance = radius * 0.15; // 最小期望距离
+                        if (colorDistance < minDistance) {
+                            // 当距离小于最小期望距离时，添加排斥力
+                            const repelStrength = 0.1 * (1 - colorDistance / minDistance);
+                            particle.vx += (dxColor / colorDistance) * repelStrength;
+                            particle.vy += (dyColor / colorDistance) * repelStrength;
+                        }
+                    }
                 }
             }
     
-            // 4. 异色粒子排斥 - 加强阴阳分离
-            const oppositeColor = particle.color === 'white' ? 'black' : 'white';
-            const oppositeCenter = centers[oppositeColor];
-            if (oppositeCenter.count > 0) {
-                const dxOpposite = particle.position.x - oppositeCenter.x;
-                const dyOpposite = particle.position.y - oppositeCenter.y;
-                const oppositeDistance = Math.sqrt(dxOpposite * dxOpposite + dyOpposite * dyOpposite);
-                const repulsionStrength = 0.12; // 增强排斥力
-                if (oppositeDistance > 0) {
-                    particle.vx += (dxOpposite / oppositeDistance) * repulsionStrength;
-                    particle.vy += (dyOpposite / oppositeDistance) * repulsionStrength;
-                }
-            }
-    
-            // 5. 边界约束
-            if (distance > radius * 0.9) {
-                const boundaryForce = 0.15 * (distance / radius);
+            // 3. 柔和的边界约束
+            const boundaryThreshold = radius * 0.95;
+            if (distance > boundaryThreshold) {
+                const boundaryForce = 0.1 * ((distance - boundaryThreshold) / radius);
                 particle.vx -= (dx / distance) * boundaryForce;
                 particle.vy -= (dy / distance) * boundaryForce;
             }
@@ -214,10 +230,29 @@ export default class Ball {
         }
     }
     victoryAnimationReleaseParticles() {
-        // // Release all particles back to the pool
-        // this.particles.forEach(particle => {
-        //     ParticlePool.getInstance().release(particle);
-        // });
-        // this.particles = [];
+        this.isVictoryAnimating = true;
+        this.victoryAnimationPhase = 'gathering';
+        
+        // 重置所有粒子的偏移，使其相对于当前球心
+        this.particles.forEach(particle => {
+            particle.resetOffset(this.x, this.y);
+        });
+    
+        // 在一段时间后切换到释放阶段
+        setTimeout(() => {
+            this.victoryAnimationPhase = 'releasing';
+            
+            // 计算释放方向
+            const centerX = window.innerWidth / 2;
+            const centerY = window.innerHeight / 2;
+            
+            // 让粒子向四周流动
+            this.particles.forEach((particle, index) => {
+                const angle = (index / this.particles.length) * Math.PI * 2;
+                const targetX = centerX + Math.cos(angle) * 500;  // 500px 半径
+                const targetY = centerY + Math.sin(angle) * 500;
+                particle.flowTowards(targetX, targetY, 0.8);
+            });
+        }, 2000); 
     }
 }

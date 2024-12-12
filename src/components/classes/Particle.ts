@@ -6,6 +6,7 @@ export default class Particle {
     size: number
     initialOffsetX: number;
     initialOffsetY: number;
+    public isFlowing: boolean = false;
 
     constructor(
         private p5: p5,
@@ -74,6 +75,7 @@ export default class Particle {
     }
 
     flowTowards(targetX: number, targetY: number, strength: number = 0.5) {
+        this.isFlowing = true;
         const dx = targetX - this.x;
         const dy = targetY - this.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
@@ -140,7 +142,6 @@ export default class Particle {
     public resetOffset(ballX: number, ballY: number) {
         this.initialOffsetX = this.x - ballX;
         this.initialOffsetY = this.y - ballY;
-        // 更新目标位置
         this.targetX = ballX;
         this.targetY = ballY;
     }

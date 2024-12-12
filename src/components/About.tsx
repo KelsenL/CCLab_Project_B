@@ -52,7 +52,7 @@ export default function About({className, onTypingComplete, onGameOver}: AboutPr
                     </p>
                     <div className="fixed bottom-0 left-0 w-full h-1/3 z-50">
                         <SideCanvas/>
-                    </div>
+                    </div> 
                 </div>               
             )}
         </div>

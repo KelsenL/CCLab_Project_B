@@ -145,13 +145,16 @@ export default class PlayerBall extends Ball {
             other.targetX = other.x;//update target
             other.targetY = other.y;
             if (other instanceof PlayerBall && this instanceof PlayerBall) {
-                const MINIMUM_PARTICLES = 10;
+                // const MINIMUM_PARTICLES = 10;
                 if (this.particles.length !== other.particles.length) {
                     const larger = this.particles.length > other.particles.length ? this : other;
                     const smaller = this.particles.length > other.particles.length ? other : this;
                     const transferCount = Math.floor(smaller.particles.length);
-                    smaller.transferParticlesTo(larger, transferCount);
-                    if(smaller.particles.length <= MINIMUM_PARTICLES){
+                    for (let i = 0; i < transferCount; i++) {
+                        smaller.transferParticleTo(larger);
+                    }
+                    // smaller.transferParticlesTo(larger, transferCount);
+                    if(smaller.particles.length <= 0){
                         return {
                             gameOver: true,
                             victory: false
@@ -167,6 +170,8 @@ export default class PlayerBall extends Ball {
                 // Victory condition - balanced particles
                 if (colorRatio < 0.1 && 
                     sizeRatio > 0.8) { 
+                    this.victoryAnimationReleaseParticles()
+                    other.victoryAnimationReleaseParticles()
                     return {
                         gameOver: true,
                         victory: true 
@@ -175,7 +180,10 @@ export default class PlayerBall extends Ball {
             }else{
                 if (this.particles.length > other.particles.length) {
                     const transferCount = Math.floor(other.particles.length);
-                    other.transferParticlesTo(this, transferCount);
+                    for (let i = 0; i < transferCount; i++) {
+                        other.transferParticleTo(this);
+                    }
+                    // other.transferParticlesTo(this, transferCount);
                 } 
             }
 
@@ -189,38 +197,40 @@ export default class PlayerBall extends Ball {
     public split(p5: p5): Ball | undefined {
         console.log('Split called, particles:', this.particles.length);
         const MIN_PARTICLES = 20;
-        if (this.particles.length < MIN_PARTICLES * 2) {
+        if (this.particles.length < MIN_PARTICLES) {
             console.log('Not enough particles to split');
             return undefined;
         }
-
         // Calculate the position of the new ball
-        const offsetDistance = this.size * 2.5;
+        const offsetDistance = this.size * 1.5;
         const angle = Math.random() * Math.PI * 2;
         const offsetX = Math.cos(angle) * offsetDistance;
         const offsetY = Math.sin(angle) * offsetDistance;
         const newX = Math.max(this.size, Math.min(this.x + offsetX, p5.width - this.size));
         const newY = Math.max(this.size, Math.min(this.y + offsetY, p5.height - this.size));
 
-        // Create new ball with 20% of the original size and correct target position
-        const newSize = this.size * 0.2;
-        console.log('Creating new ball with size:', newSize);
-        const newBall = new Ball(this.p5, newX, newY, this.color, newSize);
-        newBall.targetX = newX;
-        newBall.targetY = newY;
-
-        // Calculate particles to transfer based on size ratio
-        const sizeRatio = Math.pow(newSize / this.size, 2); // Square ratio because it's area-based
-        const particlesToSeparate = Math.floor(this.particles.length * sizeRatio);
-        console.log('Particles to separate:', particlesToSeparate);
-
+        // Calculate particles to separate (30% of particles)
+        const particlesToSeparate = Math.floor(this.particles.length * 0.3);
+        
         if (particlesToSeparate < MIN_PARTICLES) {
             console.log('Too few particles to separate');
             return undefined;
         }
 
+        // Calculate initial size based on particle count
+        const particleRatio = particlesToSeparate / this.particles.length;
+        const newSize = this.size * Math.sqrt(particleRatio); // Use square root for more natural scaling
+        
+        // Create new ball
+        console.log('Creating new ball with size:', newSize);
+        const newBall = new Ball(this.p5, newX, newY, this.color, newSize);
+        newBall.targetX = newX;
+        newBall.targetY = newY;
+
         // Transfer particles
-        this.transferParticlesTo(newBall, particlesToSeparate);
+        for (let i = 0; i < particlesToSeparate; i++) {
+            this.transferParticleTo(newBall);
+        }
         console.log('Split complete, new ball created with', particlesToSeparate, 'particles');
         
         return newBall;
