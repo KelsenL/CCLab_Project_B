@@ -25,18 +25,14 @@ export default class Ball {
         this.color = color;
         this.targetX = x;
         this.targetY = y;
-
-        // 计算粒子数量
         const particleCount = Math.floor(Math.PI * Math.pow(size / 2, 2) * Ball.BASE_PARTICLE_DENSITY);
         
-        // 在球体范围内随机分布粒子
         this.particles = Array.from({ length: particleCount }, () => {
             const radius = this.size / 2;
             const angle = p5.random(0, Math.PI * 2);
             const r = p5.random(0, radius);
             const particleX = this.x + r * Math.cos(angle);
             const particleY = this.y + r * Math.sin(angle);
-            // 创建粒子时使用当前位置作为目标位置
             const particle = new Particle(this.p5, particleX, particleY, this.color, this.x, this.y);
             return particle;
         });
@@ -55,12 +51,12 @@ export default class Ball {
         }
         if (this.isVictoryAnimating) {
             if (this.victoryAnimationPhase === 'gathering') {
-                // 加强聚集力，形成完美太极
+                //forming one yin yang
                 this.particles.forEach(particle => {
                     const dx = particle.position.x - this.x;
                     const dy = particle.position.y - this.y;
                     const distance = Math.sqrt(dx * dx + dy * dy);
-                    if (distance > this.size * 0.4) {  // 如果粒子距离太远
+                    if (distance > this.size * 0.4) {  
                         particle.reposition(this.x, this.y, this.size * 0.4);
                     }
                 });
@@ -91,43 +87,6 @@ export default class Ball {
             targetBall.updateSize()
         }
     }
-    public transferParticlesTo(targetBall: Ball, ParticleTransferCount: number) { 
-        const particlesToTransfer = [];
-        for (let i = 0; i < ParticleTransferCount && this.particles.length > 0; i++) {
-            const particle = this.particles.pop()!;
-            
-            // // 计算从源球到目标球的方向
-            const dx = targetBall.x - this.x;
-            const dy = targetBall.y - this.y;
-            // const distance = Math.sqrt(dx * dx + dy * dy);
-            
-            // 在目标球内设置随机位置
-            const targetRadius = targetBall.size / 2;
-            const spreadAngle = Math.PI / 4; // 使用更大的扇形范围
-            const baseAngle = Math.atan2(dy, dx);
-            const randomAngle = baseAngle + (Math.random() - 0.5) * spreadAngle;
-            
-            // 在目标球内部随机分布（从中心到边缘）
-            const distributionRadius = targetRadius * Math.sqrt(Math.random()); // 使用平方根使分布更均匀
-            particle.position.x = targetBall.x + distributionRadius * Math.cos(randomAngle);
-            particle.position.y = targetBall.y + distributionRadius * Math.sin(randomAngle);
-            
-            // 给予较小的随机初始速度
-            const initialSpeed = 0.5;
-            particle.vx = (Math.random() - 0.5) * initialSpeed;
-            particle.vy = (Math.random() - 0.5) * initialSpeed;
-            
-            // 重置偏移量和目标位置
-            particle.resetOffset(targetBall.x, targetBall.y);
-            
-            particlesToTransfer.push(particle);
-        }
-        
-        // 更新两个球的大小
-        targetBall.particles.push(...particlesToTransfer);
-        this.updateSize();
-        targetBall.updateSize();
-    }
 
     updateSize() :boolean{
         if (this.particles.length === 0) {
@@ -153,72 +112,43 @@ export default class Ball {
         const centerX = this.x;
         const centerY = this.y;
         const radius = this.size / 2;
-    
-        // Calculate the center points of white and black particles
-        const centers = {
-            white: { x: 0, y: 0, count: 0 },
-            black: { x: 0, y: 0, count: 0 }
-        };
-    
-        // Calculate the center points of each color
-        for (const particle of this.particles) {
-            centers[particle.color].x += particle.position.x;
-            centers[particle.color].y += particle.position.y;
-            centers[particle.color].count++;
-        }
-    
-        // Calculate the average center points
-        for (const color of ['white', 'black'] as const) {
-            if (centers[color].count > 0) {
-                centers[color].x /= centers[color].count;
-                centers[color].y /= centers[color].count;
-            }
-        }
-    
+
         // Apply forces to each particle
         for (const particle of this.particles) {
             const dx = particle.position.x - centerX;
             const dy = particle.position.y - centerY;
             const distance = Math.sqrt(dx * dx + dy * dy);
             
-            // 1. 基础太极旋转 - 始终保持
+            // 1. Basic rotation force - always active
+            const angle = Math.atan2(dy, dx);
+            const normalizedAngle = angle < 0 ? angle + Math.PI * 2 : angle;
             const rotationDirection = particle.color === 'white' ? 1 : -1;
-            const baseRotationStrength = 0.08;
-            const rotationStrength = baseRotationStrength * (1 - distance / radius * 0.3);
+            
+            // 根据是否在流动状态调整力的强度
+            const stateMultiplier = particle.isFlowing ? 0.5 : 1.0;
+            const baseRotationStrength = 0.15 * stateMultiplier;
+            const rotationStrength = baseRotationStrength * (1 - Math.pow(distance / radius, 2));
             
             particle.vx += -dy * rotationStrength * rotationDirection;
             particle.vy += dx * rotationStrength * rotationDirection;
-    
-            // 2. 同色聚集 - 仅在非flowing状态下
-            if (!particle.isFlowing) {
-                const colorCenter = centers[particle.color];
-                if (colorCenter.count > 0) {
-                    const dxColor = particle.position.x - colorCenter.x;
-                    const dyColor = particle.position.y - colorCenter.y;
-                    const colorDistance = Math.sqrt(dxColor * dxColor + dyColor * dyColor);
-                    
-                    if (colorDistance > 0) {
-                        // 聚集力
-                        const attractionStrength = 0.2;
-                        particle.vx -= (dxColor / colorDistance) * attractionStrength;
-                        particle.vy -= (dyColor / colorDistance) * attractionStrength;
-                        
-                        // 添加分散力，防止过度聚集
-                        const minDistance = radius * 0.15; // 最小期望距离
-                        if (colorDistance < minDistance) {
-                            // 当距离小于最小期望距离时，添加排斥力
-                            const repelStrength = 0.1 * (1 - colorDistance / minDistance);
-                            particle.vx += (dxColor / colorDistance) * repelStrength;
-                            particle.vy += (dyColor / colorDistance) * repelStrength;
-                        }
-                    }
-                }
-            }
-    
-            // 3. 柔和的边界约束
+
+            // 2. Push particles to their color's side
+            const targetAngle = particle.color === 'white' ? 0 : Math.PI; // white: right, black: left
+            let angleDiff = normalizedAngle - targetAngle;
+            if (angleDiff > Math.PI) angleDiff -= Math.PI * 2;
+            if (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+            
+            const separationStrength = 0.1 * stateMultiplier;
+            const targetX = centerX + Math.cos(targetAngle) * distance;
+            const targetY = centerY + Math.sin(targetAngle) * distance;
+            
+            particle.vx += (targetX - particle.position.x) * separationStrength;
+            particle.vy += (targetY - particle.position.y) * separationStrength;
+
+            // 3. Boundary constraint
             const boundaryThreshold = radius * 0.95;
             if (distance > boundaryThreshold) {
-                const boundaryForce = 0.1 * ((distance - boundaryThreshold) / radius);
+                const boundaryForce = 0.2 * ((distance - boundaryThreshold) / radius);
                 particle.vx -= (dx / distance) * boundaryForce;
                 particle.vy -= (dy / distance) * boundaryForce;
             }
@@ -233,23 +163,23 @@ export default class Ball {
         this.isVictoryAnimating = true;
         this.victoryAnimationPhase = 'gathering';
         
-        // 重置所有粒子的偏移，使其相对于当前球心
+        // Reset offset of all particles to the current ball center
         this.particles.forEach(particle => {
             particle.resetOffset(this.x, this.y);
         });
     
-        // 在一段时间后切换到释放阶段
+        // Switch to release phase after a while
         setTimeout(() => {
             this.victoryAnimationPhase = 'releasing';
             
-            // 计算释放方向
+            // Calculate release direction
             const centerX = window.innerWidth / 2;
             const centerY = window.innerHeight / 2;
             
-            // 让粒子向四周流动
+            // Let particles flow outwards
             this.particles.forEach((particle, index) => {
                 const angle = (index / this.particles.length) * Math.PI * 2;
-                const targetX = centerX + Math.cos(angle) * 500;  // 500px 半径
+                const targetX = centerX + Math.cos(angle) * 500;  // 500px radius
                 const targetY = centerY + Math.sin(angle) * 500;
                 particle.flowTowards(targetX, targetY, 0.8);
             });
